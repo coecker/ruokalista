@@ -331,7 +331,14 @@
             }
         }
 
-        // --- MODAALIN HALLINTA (Tukee HTML-muotoilua) ---
+        // Apufunktio HTML-entiteettien korjaamiseen (esim. &lt; -> <)
+        function decodeHtml(html) {
+            const txt = document.createElement("textarea");
+            txt.innerHTML = html;
+            return txt.value;
+        }
+
+        // --- MODAALIN HALLINTA (Puhdistaa ja tukee HTML-muotoilua) ---
         function openRecipeModal(recipeId) {
             const recipe = recipes.find(r => r.id === recipeId);
             if (!recipe) return;
@@ -339,8 +346,9 @@
             document.getElementById('modal-title').textContent = recipe.name;
             document.getElementById('modal-ingredients').textContent = recipe.ingredients || 'Ei aineksia.';
             
-            // Käytetään innerHTML, jotta HTML-tagit (kuten <b>, <br>, <ul>) renderöityvät oikein
-            document.getElementById('modal-instructions').innerHTML = recipe.instructions || 'Ei valmistusohjetta.';
+            // Dekoodataan mahdolliset HTML-entiteetit ja asetetaan innerHTML:nä
+            const rawInstructions = recipe.instructions || 'Ei valmistusohjetta.';
+            document.getElementById('modal-instructions').innerHTML = decodeHtml(rawInstructions);
             
             const sourceContainer = document.getElementById('modal-source-container');
             const sourceLink = document.getElementById('modal-source-link');
@@ -570,4 +578,103 @@
             let html = '';
             const categoryMeta = {
                 'Tuorekset': { icon: '🥦', title: 'Tuorekset (Vihannekset & Hedelmät)' },
-                'Liha': { icon: '🥩', title: 'Liha, Siip
+                'Liha': { icon: '🥩', title: 'Liha, Siipikarja & Kala' },
+                'Maito': { icon: '🥛', title: 'Maitotuotteet & Juustot' },
+                'Pakaste': { icon: '❄️', title: 'Pakasteet' },
+                'Muut': { icon: '🥫', title: 'Muut (Kuivatuotteet, Mausteet jne.)' }
+            };
+
+            for (const [catName, items] of Object.entries(categories)) {
+                if (items.length === 0) continue;
+                
+                items.sort();
+                const meta = categoryMeta[catName];
+
+                html += `
+                    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden transition-colors">
+                        <div class="px-6 py-3.5 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+                            <span class="text-base">${meta.icon}</span>
+                            <h3 class="font-bold text-slate-800 dark:text-white text-xs uppercase tracking-wider">${meta.title}</h3>
+                        </div>
+                        <div class="divide-y divide-slate-100 dark:divide-slate-700">
+                            ${items.map(item => `
+                                <div class="px-6 py-3 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-700/40 transition-colors">
+                                    <label class="flex items-center space-x-3 cursor-pointer select-none">
+                                        <input type="checkbox" class="w-4 h-4 text-emerald-600 rounded border-slate-300 dark:border-slate-600 focus:ring-emerald-500">
+                                        <span class="text-slate-800 dark:text-slate-200 text-sm font-medium">${escapeHtml(item)}</span>
+                                    </label>
+                                    <span class="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md font-medium">Perhekerroin 2.8x</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function copyGroceriesToClipboard() {
+            let allIngredients = [];
+            Object.values(planner).forEach(recipeId => {
+                if (!recipeId) return;
+                const recipe = recipes.find(r => r.id === recipeId);
+                if (recipe && recipe.ingredients) {
+                    const items = recipe.ingredients.split(',').map(i => i.trim()).filter(i => i);
+                    allIngredients.push(...items);
+                }
+            });
+            const unique = [...new Set(allIngredients)].sort();
+            
+            if (unique.length === 0) {
+                showToast('Ostoslista on tyhjä!');
+                return;
+            }
+
+            const textToCopy = `Viikon ruokaostokset:\n` + unique.map(i => `• ${i}`).join('\n');
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast('Ostoslista kopioitu leikepöydälle!');
+            } catch (err) {
+                showToast('Kopiointi epäonnistui');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function exportGroceriesCSV() {
+            let allIngredients = [];
+            Object.values(planner).forEach(recipeId => {
+                if (!recipeId) return;
+                const recipe = recipes.find(r => r.id === recipeId);
+                if (recipe && recipe.ingredients) {
+                    const items = recipe.ingredients.split(',').map(i => i.trim()).filter(i => i);
+                    allIngredients.push(...items);
+                }
+            });
+            const unique = [...new Set(allIngredients)].sort();
+
+            let csvContent = "data:text/csv;charset=utf-8,Kategoria,Ainesosa\n";
+            unique.forEach(item => {
+                const cat = categorizeIngredient(item);
+                csvContent += `"${cat}","${item}"\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "ostoslista.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Ostoslista ladattu CSV-tiedostona!');
+        }
+    </script>
+</body>
+</html>
